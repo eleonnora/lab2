@@ -21,18 +21,20 @@ entity top is
     GRAPH_MEM_DATA_WIDTH : natural := 32
     );
   port (
-    clk_i          : in  std_logic;
-    reset_n_i      : in  std_logic;
+	 direct_mode_i   : in  std_logic;
+	 display_mode_i  : in  std_logic_vector(1 downto 0);
+    clk_i           : in  std_logic;
+    reset_n_i       : in  std_logic;
     -- vga
-    vga_hsync_o    : out std_logic;
-    vga_vsync_o    : out std_logic;
-    blank_o        : out std_logic;
-    pix_clock_o    : out std_logic;
-    psave_o        : out std_logic;
-    sync_o         : out std_logic;
-    red_o          : out std_logic_vector(7 downto 0);
-    green_o        : out std_logic_vector(7 downto 0);
-    blue_o         : out std_logic_vector(7 downto 0)
+    vga_hsync_o     : out std_logic;
+    vga_vsync_o     : out std_logic;
+    blank_o         : out std_logic;
+    pix_clock_o     : out std_logic;
+    psave_o         : out std_logic;
+    sync_o          : out std_logic;
+    red_o           : out std_logic_vector(7 downto 0);
+    green_o         : out std_logic_vector(7 downto 0);
+    blue_o          : out std_logic_vector(7 downto 0)
    );
 end top;
 
@@ -103,6 +105,19 @@ architecture rtl of top is
     );
   end component;
   
+component reg is
+	generic(
+		WIDTH    : positive :=1;
+		RST_INIT : integer := 0
+	);
+	port(
+		i_clk  : in  std_logic;
+		in_rst : in  std_logic;
+		i_d    : in  std_logic_vector(WIDTH-1 downto 0);
+		o_q    : out std_logic_vector(WIDTH-1 downto 0)
+	);
+end component reg;
+
   component ODDR2
   generic(
    DDR_ALIGNMENT : string := "NONE";
@@ -157,6 +172,12 @@ architecture rtl of top is
   signal dir_pixel_column    : std_logic_vector(10 downto 0);
   signal dir_pixel_row       : std_logic_vector(10 downto 0);
 
+  signal next_char_address			  : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
+  signal char_addr_reg				  : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
+  
+  signal next_char_address2		  : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
+  signal char_addr_reg2				  : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
+
 begin
 
   -- calculate message lenght from font size
@@ -168,8 +189,8 @@ begin
   graphics_lenght <= conv_std_logic_vector(MEM_SIZE*8*8, GRAPH_MEM_ADDR_WIDTH);
   
   -- removed to inputs pin
-  direct_mode <= '1';
-  display_mode     <= "10";  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
+  --direct_mode <= '1';
+  --display_mode     <= "10";  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
   
   font_size        <= x"1";
   show_frame       <= '1';
@@ -195,6 +216,31 @@ begin
   );
   pix_clock_n <= not(pix_clock_s);
 
+   
+	reg_i:reg
+	generic map(
+		WIDTH    =>  MEM_ADDR_WIDTH,
+		RST_INIT => 0
+	)
+	port map(
+		i_clk  => pix_clock_s,
+		in_rst => vga_rst_n_s,
+		i_d => next_char_address,
+		o_q => char_addr_reg
+		);
+
+
+	reg_2:reg
+	generic map(
+		WIDTH    =>  MEM_ADDR_WIDTH,
+		RST_INIT => 0
+	)
+	port map(
+		i_clk  => pix_clock_s,
+		in_rst => vga_rst_n_s,
+		i_d => next_char_address2,
+		o_q => char_addr_reg2
+		);
   -- component instantiation
   vga_top_i: vga_top
   generic map(
@@ -211,14 +257,14 @@ begin
     clk_i              => clk_i,
     reset_n_i          => reset_n_i,
     --
-    direct_mode_i      => direct_mode,
+    direct_mode_i      => direct_mode_i,
     dir_red_i          => dir_red,
     dir_green_i        => dir_green,
     dir_blue_i         => dir_blue,
     dir_pixel_column_o => dir_pixel_column,
     dir_pixel_row_o    => dir_pixel_row,
     -- cfg
-    display_mode_i     => display_mode,  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
+    display_mode_i     => display_mode_i,  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
     -- text mode interface
     text_addr_i        => char_address,
     text_data_i        => char_value,
@@ -251,15 +297,66 @@ begin
   --dir_green
   --dir_blue
  
+ 
+  dir_red 		<=	x"FF" when dir_pixel_column <= 1*( H_RES/8 ) else
+						x"FF" when dir_pixel_column > 1*( H_RES/8 ) and dir_pixel_column <= 2*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 2*( H_RES/8 ) and dir_pixel_column <= 3*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 3*( H_RES/8 ) and dir_pixel_column <= 4*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 4*( H_RES/8 ) and dir_pixel_column <= 5*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 5*( H_RES/8 ) and dir_pixel_column <= 6*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 6*( H_RES/8 ) and dir_pixel_column <= 7*( H_RES/8 ) else
+						x"00"; 
+						
+	dir_green 	<= x"FF" when dir_pixel_column <= 1*( H_RES/8 ) else
+						x"FF" when dir_pixel_column > 1*( H_RES/8 ) and dir_pixel_column <= 2*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 2*( H_RES/8 ) and dir_pixel_column <= 3*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 3*( H_RES/8 ) and dir_pixel_column <= 4*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 4*( H_RES/8 ) and dir_pixel_column <= 5*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 5*( H_RES/8 ) and dir_pixel_column <= 6*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 6*( H_RES/8 ) and dir_pixel_column <= 7*( H_RES/8 ) else
+						x"00"; 
+	
+	dir_blue 	<= x"FF" when dir_pixel_column <= 1*( H_RES/8 ) else
+						x"00" when dir_pixel_column > 1*( H_RES/8 ) and dir_pixel_column <= 2*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 2*( H_RES/8 ) and dir_pixel_column <= 3*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 3*( H_RES/8 ) and dir_pixel_column <= 4*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 4*( H_RES/8 ) and dir_pixel_column <= 5*( H_RES/8 ) else
+					   x"00" when dir_pixel_column > 5*( H_RES/8 ) and dir_pixel_column <= 6*( H_RES/8 ) else
+					   x"FF" when dir_pixel_column > 6*( H_RES/8 ) and dir_pixel_column <= 7*( H_RES/8 ) else
+						x"00";
   -- koristeci signale realizovati logiku koja pise po TXT_MEM
   --char_address
   --char_value
   --char_we
+  next_char_address <= char_addr_reg + 1 when char_addr_reg < 1200 else (others=>'0');
+  
+  char_we <= '1';
+
+ char_address <= char_addr_reg;
+	
+  
+  char_value <= "000001" when char_address = "10111" else
+				    "000010" when char_address = "11000" else
+				    "000011" when char_address = "11001" else
+				    "000100" when char_address = "11010" else
+				    "100000";
+  
   
   -- koristeci signale realizovati logiku koja pise po GRAPH_MEM
   --pixel_address
   --pixel_value
   --pixel_we
-  
-  
+ next_char_address2 <= char_addr_reg2 + 1 when char_addr_reg2 < 9600 else (others=>'0');
+ pixel_we <= '1';
+ pixel_address <= "000000" & char_addr_reg2;
+ 
+ pixel_value <= x"FFFFFFFF" when pixel_address = 4500 else
+					 x"FFFFFFFF" when pixel_address = 4520 else
+					 x"FFFFFFFF" when pixel_address = 4540 else
+					 x"FFFFFFFF" when pixel_address = 4560 else
+					 x"FFFFFFFF" when pixel_address = 4580 else
+					 x"FFFFFFFF" when pixel_address = 4600 else
+					 x"00000000";
+						  
+ 
 end rtl;
